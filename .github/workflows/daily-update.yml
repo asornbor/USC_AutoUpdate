@@ -1,1 +1,62 @@
+name: Daily Shiny App Update
 
+# WHEN TO RUN: Three triggers
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 6 AM UTC daily (automatic)
+  workflow_dispatch:      # Manual button in GitHub (for testing)
+  push:
+    branches: [ main ]    # Every time you push code (for development)
+
+jobs:
+  update-and-deploy:
+    runs-on: ubuntu-latest    # Use Ubuntu virtual machine
+    
+    steps:
+    # STEP 1: Get your code
+    - name: Checkout repository
+      uses: actions/checkout@v4   # Downloads your repo to the virtual machine
+      
+    # STEP 2: Install R
+    - name: Setup R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: '4.3.0'       # Specific R version for consistency
+        
+    # STEP 3: Install Pandoc (needed for R Markdown)
+    - name: Setup Pandoc
+      uses: r-lib/actions/setup-pandoc@v2
+      
+    # STEP 4: Install system dependencies (Ubuntu packages R needs)
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+        
+    # STEP 5: Cache R packages (speeds up future runs)
+    - name: Cache R packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.local/share/renv
+        key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
+        restore-keys: ${{ runner.os }}-renv-
+        
+    # STEP 6: Install your R packages
+    - name: Install R packages
+      run: Rscript R/install_packages.R
+      
+    # STEP 7: Get fresh data
+    - name: Update data
+      run: Rscript R/update_data.R
+      
+    # STEP 8: Convert your app to HTML
+    - name: Build static site
+      run: Rscript R/build_app.R
+      
+    # STEP 9: Publish to the web
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.ref == 'refs/heads/main'    # Only deploy from main branch
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}  # GitHub provides this automatically
+        publish_dir: ./docs                        # Publish the docs folder
